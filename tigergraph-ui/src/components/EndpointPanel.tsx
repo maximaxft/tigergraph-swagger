@@ -1,29 +1,33 @@
 import { useState, useEffect } from 'react';
-import { Copy, Play, ChevronDown, ChevronUp, Lock, Send, X } from 'lucide-react';
+import { Copy, Play, ChevronDown, ChevronUp, Send, X, AlertCircle } from 'lucide-react';
 import { type Endpoint } from '../data/endpoints';
 import { type GraphData } from '../data/graphData';
+import { API_BASE_URL } from '../config';
 
 export interface ApiResponse {
   response: object;
   networkx: GraphData;
+  status: number;
+  error?: string;
 }
 
 interface EndpointPanelProps {
   endpoint: Endpoint | null;
+  apiKey: string;
   onTryIt: (result: ApiResponse) => void;
 }
 
 const METHOD_STYLES: Record<string, { bg: string; text: string; border: string }> = {
-  GET: { bg: 'bg-[#2A7FFF]/10', text: 'text-[#2A7FFF]', border: 'border-[#2A7FFF]/30' },
-  POST: { bg: 'bg-[#2ECC71]/10', text: 'text-[#2ECC71]', border: 'border-[#2ECC71]/30' },
-  PUT: { bg: 'bg-[#F39C12]/10', text: 'text-[#F39C12]', border: 'border-[#F39C12]/30' },
+  GET:    { bg: 'bg-[#2A7FFF]/10', text: 'text-[#2A7FFF]', border: 'border-[#2A7FFF]/30' },
+  POST:   { bg: 'bg-[#2ECC71]/10', text: 'text-[#2ECC71]', border: 'border-[#2ECC71]/30' },
+  PUT:    { bg: 'bg-[#F39C12]/10', text: 'text-[#F39C12]', border: 'border-[#F39C12]/30' },
   DELETE: { bg: 'bg-[#E74C3C]/10', text: 'text-[#E74C3C]', border: 'border-[#E74C3C]/30' },
 };
 
 const IN_BADGE: Record<string, string> = {
-  path: 'bg-[#FF6B35]/10 text-[#FF6B35] border-[#FF6B35]/20',
+  path:  'bg-[#FF6B35]/10 text-[#FF6B35] border-[#FF6B35]/20',
   query: 'bg-[#2A7FFF]/10 text-[#2A7FFF] border-[#2A7FFF]/20',
-  body: 'bg-[#9B59B6]/10 text-[#9B59B6] border-[#9B59B6]/20',
+  body:  'bg-[#9B59B6]/10 text-[#9B59B6] border-[#9B59B6]/20',
 };
 
 function CopyButton({ text }: { text: string }) {
@@ -39,20 +43,38 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps) {
+function buildUrl(path: string, paramValues: Record<string, string>, parameters: Endpoint['parameters']): string {
+  let url = `${API_BASE_URL}${path}`;
+
+  // Replace path params: /foo/{bar} → /foo/value
+  for (const param of parameters.filter((p) => p.in === 'path')) {
+    url = url.replace(`{${param.name}}`, encodeURIComponent(paramValues[param.name] ?? ''));
+  }
+
+  // Append query params
+  const query = parameters
+    .filter((p) => p.in === 'query' && paramValues[p.name])
+    .map((p) => `${encodeURIComponent(p.name)}=${encodeURIComponent(paramValues[p.name])}`)
+    .join('&');
+
+  if (query) url += `?${query}`;
+  return url;
+}
+
+export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPanelProps) {
   const [showParams, setShowParams] = useState(true);
   const [tryMode, setTryMode] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setTryMode(false);
     setIsSending(false);
+    setSendError(null);
     if (endpoint) {
       const defaults: Record<string, string> = {};
-      for (const p of endpoint.parameters) {
-        defaults[p.name] = p.example ?? '';
-      }
+      for (const p of endpoint.parameters) defaults[p.name] = p.example ?? '';
       setParamValues(defaults);
     }
   }, [endpoint?.id]);
@@ -74,14 +96,55 @@ export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps)
   }
 
   const style = METHOD_STYLES[endpoint.method];
-  const curlCmd = `curl -X ${endpoint.method} \\\n  "http://localhost:9000${endpoint.path}" \\\n  -H "Authorization: Bearer <token>" \\\n  -H "Content-Type: application/json"`;
+  const resolvedUrl = buildUrl(endpoint.path, paramValues, endpoint.parameters);
+  const bodyParam = endpoint.parameters.find((p) => p.in === 'body');
+
+  const curlParts = [
+    `curl -X ${endpoint.method}`,
+    `  "${resolvedUrl}"`,
+    `  -H "X-API-Key: ${apiKey}"`,
+    `  -H "Content-Type: application/json"`,
+    bodyParam && paramValues[bodyParam.name]
+      ? `  -d '${paramValues[bodyParam.name]}'`
+      : null,
+  ].filter(Boolean);
+  const curlCmd = curlParts.join(' \\\n');
 
   const handleSend = async () => {
     setIsSending(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setIsSending(false);
-    setTryMode(false);
-    onTryIt({ response: endpoint.responseExample, networkx: endpoint.networkxExample });
+    setSendError(null);
+
+    const url = buildUrl(endpoint.path, paramValues, endpoint.parameters);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-API-Key': apiKey };
+
+    const fetchOptions: RequestInit = { method: endpoint.method, headers };
+    if (bodyParam && paramValues[bodyParam.name]) {
+      fetchOptions.body = paramValues[bodyParam.name];
+    }
+
+    try {
+      const res = await fetch(url, fetchOptions);
+      const data = await res.json();
+
+      onTryIt({
+        status: res.status,
+        response: data.response ?? data,
+        networkx: data.networkx ?? { nodes: [], links: [] },
+        ...(res.ok ? {} : { error: data.detail ?? data.message ?? `HTTP ${res.status}` }),
+      });
+      setTryMode(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error';
+      setSendError(message);
+      onTryIt({
+        status: 0,
+        response: {},
+        networkx: { nodes: [], links: [] },
+        error: message,
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -101,8 +164,7 @@ export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps)
             </span>
           </div>
           <div className="flex items-center gap-1 text-[10px] text-[#8B949E] shrink-0">
-            <Lock size={10} />
-            <span>Bearer</span>
+            <span>X-API-Key</span>
           </div>
         </div>
         <h1 className="text-[#E6EDF3] text-base font-semibold mb-1">{endpoint.summary}</h1>
@@ -132,27 +194,36 @@ export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps)
                       <span className={`text-[9px] px-1.5 py-0.5 rounded border font-medium ${IN_BADGE[param.in]}`}>{param.in}</span>
                       <span className="text-[9px] text-[#8B949E] bg-[#21262D] px-1.5 py-0.5 rounded font-mono">{param.type}</span>
                       {param.required && (
-                        <span className="text-[9px] text-[#E74C3C] bg-[#E74C3C]/10 border border-[#E74C3C]/20 px-1.5 py-0.5 rounded">
-                          required
-                        </span>
+                        <span className="text-[9px] text-[#E74C3C] bg-[#E74C3C]/10 border border-[#E74C3C]/20 px-1.5 py-0.5 rounded">required</span>
                       )}
                     </div>
                     <p className="text-[#8B949E] text-[11px] mb-2">{param.description}</p>
-                    {tryMode && (
-                      <input
-                        value={paramValues[param.name] ?? ''}
-                        onChange={(e) => setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))}
-                        placeholder={param.example ?? `Enter ${param.name}…`}
-                        className="w-full bg-[#111318] border border-[#21262D] focus:border-[#FF6B35]/50 rounded-md px-3 py-1.5 text-xs text-[#E6EDF3] placeholder-[#3D444D] outline-none transition-colors font-mono"
-                      />
-                    )}
-                    {!tryMode && param.example && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[#8B949E]">Example:</span>
-                        <code className="text-[10px] text-[#2ECC71] font-mono bg-[#2ECC71]/5 px-2 py-0.5 rounded border border-[#2ECC71]/10">
-                          {param.example}
-                        </code>
-                      </div>
+                    {tryMode ? (
+                      param.in === 'body' ? (
+                        <textarea
+                          rows={4}
+                          value={paramValues[param.name] ?? ''}
+                          onChange={(e) => setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))}
+                          placeholder={`JSON body…`}
+                          className="w-full bg-[#111318] border border-[#21262D] focus:border-[#FF6B35]/50 rounded-md px-3 py-2 text-xs text-[#E6EDF3] placeholder-[#3D444D] outline-none transition-colors font-mono resize-none"
+                        />
+                      ) : (
+                        <input
+                          value={paramValues[param.name] ?? ''}
+                          onChange={(e) => setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))}
+                          placeholder={param.example ?? `Enter ${param.name}…`}
+                          className="w-full bg-[#111318] border border-[#21262D] focus:border-[#FF6B35]/50 rounded-md px-3 py-1.5 text-xs text-[#E6EDF3] placeholder-[#3D444D] outline-none transition-colors font-mono"
+                        />
+                      )
+                    ) : (
+                      param.example && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-[#8B949E]">Example:</span>
+                          <code className="text-[10px] text-[#2ECC71] font-mono bg-[#2ECC71]/5 px-2 py-0.5 rounded border border-[#2ECC71]/10">
+                            {param.example}
+                          </code>
+                        </div>
+                      )
                     )}
                   </div>
                 ))}
@@ -161,7 +232,7 @@ export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps)
           </div>
         )}
 
-        {/* cURL */}
+        {/* cURL preview */}
         <div className="rounded-xl border border-[#21262D] overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 bg-[#161B22]">
             <span className="text-xs font-semibold text-[#E6EDF3]">cURL</span>
@@ -172,11 +243,11 @@ export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps)
           </div>
         </div>
 
-        {/* Try it out */}
+        {/* Try it out / Execute */}
         {!tryMode ? (
           <button
-            onClick={() => setTryMode(true)}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-[#FF6B35] hover:bg-[#FF8C5A] text-white transition-all shadow-lg shadow-[#FF6B35]/20 hover:shadow-[#FF6B35]/30"
+            onClick={() => { setTryMode(true); setSendError(null); }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm bg-[#FF6B35] hover:bg-[#FF8C5A] text-white transition-all shadow-lg shadow-[#FF6B35]/20"
           >
             <Play size={14} />
             Try it out
@@ -185,10 +256,7 @@ export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps)
           <div className="rounded-xl border border-[#FF6B35]/30 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 bg-[#FF6B35]/8">
               <span className="text-xs font-semibold text-[#FF6B35]">Execute request</span>
-              <button
-                onClick={() => setTryMode(false)}
-                className="text-[#8B949E] hover:text-[#E6EDF3] transition-colors"
-              >
+              <button onClick={() => { setTryMode(false); setSendError(null); }} className="text-[#8B949E] hover:text-[#E6EDF3] transition-colors">
                 <X size={14} />
               </button>
             </div>
@@ -197,17 +265,18 @@ export default function EndpointPanel({ endpoint, onTryIt }: EndpointPanelProps)
                 <div className="text-[10px] text-[#8B949E] mb-1 uppercase tracking-wider">Base URL</div>
                 <input
                   readOnly
-                  value="http://localhost:9000"
+                  value={API_BASE_URL}
                   className="w-full bg-[#111318] border border-[#21262D] rounded-md px-3 py-1.5 text-xs text-[#8B949E] font-mono outline-none"
                 />
               </div>
-              <div>
-                <div className="text-[10px] text-[#8B949E] mb-1 uppercase tracking-wider">Authorization</div>
-                <input
-                  placeholder="Bearer <token>"
-                  className="w-full bg-[#111318] border border-[#21262D] focus:border-[#FF6B35]/50 rounded-md px-3 py-1.5 text-xs text-[#E6EDF3] placeholder-[#3D444D] font-mono outline-none transition-colors"
-                />
-              </div>
+
+              {sendError && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-[#E74C3C]/10 border border-[#E74C3C]/20 text-xs text-[#E74C3C]">
+                  <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                  <span className="font-mono break-all">{sendError}</span>
+                </div>
+              )}
+
               <button
                 onClick={handleSend}
                 disabled={isSending}

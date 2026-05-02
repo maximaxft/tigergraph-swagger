@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
-import { endpoints, tags, type Endpoint } from '../data/endpoints';
+import { endpoints, type Endpoint } from '../data/endpoints';
 
 interface SidebarProps {
   selectedEndpoint: Endpoint | null;
@@ -16,7 +16,8 @@ const METHOD_COLORS: Record<string, string> = {
 
 export default function Sidebar({ selectedEndpoint, onSelect }: SidebarProps) {
   const [search, setSearch] = useState('');
-  const [openTags, setOpenTags] = useState<Set<string>>(new Set(tags.map((t) => t.name)));
+  const allTags = Array.from(new Set(endpoints.map((e) => e.tag)));
+  const [openTags, setOpenTags] = useState<Set<string>>(new Set(allTags));
 
   const toggleTag = (tag: string) => {
     setOpenTags((prev) => {
@@ -49,19 +50,19 @@ export default function Sidebar({ selectedEndpoint, onSelect }: SidebarProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
-        {tags.map((tag) => {
-          const tagEndpoints = filtered.filter((e) => e.tag === tag.name);
+        {allTags.map((tag) => {
+          const tagEndpoints = filtered.filter((e) => e.tag === tag);
           if (tagEndpoints.length === 0) return null;
-          const isOpen = openTags.has(tag.name);
+          const isOpen = openTags.has(tag);
 
           return (
-            <div key={tag.name} className="mb-1">
+            <div key={tag} className="mb-1">
               <button
-                onClick={() => toggleTag(tag.name)}
+                onClick={() => toggleTag(tag)}
                 className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8B949E] uppercase tracking-widest hover:text-[#E6EDF3] transition-colors"
               >
                 {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                {tag.name}
+                {tag}
                 <span className="ml-auto text-[10px] normal-case tracking-normal bg-[#21262D] text-[#8B949E] rounded px-1.5 py-0.5">
                   {tagEndpoints.length}
                 </span>

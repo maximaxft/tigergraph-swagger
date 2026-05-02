@@ -1,6 +1,15 @@
-import { Database, Activity, GitBranch } from 'lucide-react';
+import { Database, Activity, KeyRound, LogOut } from 'lucide-react';
 
-export default function Header() {
+interface HeaderProps {
+  apiKey: string;
+  onDisconnect: () => void;
+}
+
+export default function Header({ apiKey, onDisconnect }: HeaderProps) {
+  const maskedKey = apiKey.length > 8
+    ? apiKey.slice(0, 4) + '••••' + apiKey.slice(-4)
+    : '••••••••';
+
   return (
     <header className="h-14 flex items-center px-6 border-b border-[#21262D] bg-[#111318] shrink-0 z-50">
       <div className="flex items-center gap-3">
@@ -20,10 +29,20 @@ export default function Header() {
           <Activity size={12} className="animate-pulse" />
           <span>Connected</span>
         </div>
-        <div className="text-[#3D444D] text-xs font-mono">localhost:9000</div>
-        <a href="#" className="text-[#8B949E] hover:text-[#E6EDF3] transition-colors">
-          <GitBranch size={18} />
-        </a>
+
+        <div className="flex items-center gap-1.5 bg-[#161B22] border border-[#21262D] rounded-lg px-2.5 py-1.5">
+          <KeyRound size={11} className="text-[#FF6B35]" />
+          <code className="text-[#8B949E] text-[11px] font-mono">{maskedKey}</code>
+        </div>
+
+        <button
+          onClick={onDisconnect}
+          title="Disconnect"
+          className="flex items-center gap-1.5 text-[#8B949E] hover:text-[#E74C3C] text-xs transition-colors"
+        >
+          <LogOut size={14} />
+          <span>Disconnect</span>
+        </button>
       </div>
     </header>
   );

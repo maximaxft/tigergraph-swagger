@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Network, Braces, Copy, Check, Zap } from 'lucide-react';
+import { Network, Braces, Copy, Check, Zap, AlertCircle } from 'lucide-react';
 import GraphViewer from './GraphViewer';
 import { type ApiResponse } from './EndpointPanel';
 
@@ -22,21 +22,39 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function StatusBadge({ status }: { status: number }) {
+  const ok = status >= 200 && status < 300;
+  const redirect = status >= 300 && status < 400;
+  const color = status === 0
+    ? 'text-[#8B949E] bg-[#8B949E]/10 border-[#8B949E]/20'
+    : ok
+    ? 'text-[#2ECC71] bg-[#2ECC71]/10 border-[#2ECC71]/20'
+    : redirect
+    ? 'text-[#F39C12] bg-[#F39C12]/10 border-[#F39C12]/20'
+    : 'text-[#E74C3C] bg-[#E74C3C]/10 border-[#E74C3C]/20';
+  const label = status === 0 ? 'Network Error' : `${status}`;
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded border font-medium font-mono ${color}`}>
+      {label}
+    </span>
+  );
+}
+
 function JsonHighlight({ data }: { data: object }) {
   const json = JSON.stringify(data, null, 2);
   return (
     <pre className="text-[11px] font-mono leading-relaxed">
       {json.split('\n').map((line, i) => {
         const keyMatch = line.match(/^(\s*)"([^"]+)":/);
-        const strVal = line.match(/:\s*"([^"]*)"(,?)$/);
-        const numVal = line.match(/:\s*(-?\d+\.?\d*)(,?)$/);
-        const boolVal = line.match(/:\s*(true|false)(,?)$/);
-        const nullVal = line.match(/:\s*(null)(,?)$/);
+        const strVal   = line.match(/:\s*"([^"]*)"(,?)$/);
+        const numVal   = line.match(/:\s*(-?\d+\.?\d*)(,?)$/);
+        const boolVal  = line.match(/:\s*(true|false)(,?)$/);
+        const nullVal  = line.match(/:\s*(null)(,?)$/);
 
         if (keyMatch) {
           const indent = keyMatch[1];
-          const key = keyMatch[2];
-          const rest = line.slice(keyMatch[0].length);
+          const key    = keyMatch[2];
+          const rest   = line.slice(keyMatch[0].length);
           return (
             <span key={i} className="block">
               <span className="text-[#3D444D]">{indent}</span>
@@ -45,7 +63,7 @@ function JsonHighlight({ data }: { data: object }) {
               {strVal  && <><span className="text-[#2ECC71]"> "{strVal[1]}"</span><span className="text-[#8B949E]">{strVal[2]}</span></>}
               {!strVal && numVal  && <><span className="text-[#2A7FFF]"> {numVal[1]}</span><span className="text-[#8B949E]">{numVal[2]}</span></>}
               {!strVal && !numVal && boolVal && <><span className="text-[#F39C12]"> {boolVal[1]}</span><span className="text-[#8B949E]">{boolVal[2]}</span></>}
-              {!strVal && !numVal && !boolVal && nullVal && <><span className="text-[#8B949E]"> null</span><span className="text-[#8B949E]">{nullVal[2]}</span></>}
+              {!strVal && !numVal && !boolVal && nullVal && <span className="text-[#8B949E]"> null{nullVal[2]}</span>}
               {!strVal && !numVal && !boolVal && !nullVal && <span className="text-[#8B949E]">{rest}</span>}
             </span>
           );
@@ -60,22 +78,24 @@ export default function ResponsePanel({ response }: ResponsePanelProps) {
   const [view, setView] = useState<View>('json');
   const hasGraph = response && (response.networkx.nodes.length > 0 || response.networkx.links.length > 0);
   const json = response ? JSON.stringify(response.response, null, 2) : '';
+  const isError = response && (response.error || response.status === 0 || response.status >= 400);
 
   return (
     <div className="flex flex-col h-full bg-[#0A0C10]">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#21262D] bg-[#111318] shrink-0">
-        <span className="text-[10px] text-[#8B949E] uppercase tracking-wider font-semibold">Response</span>
-        {response && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-[#8B949E] uppercase tracking-wider font-semibold">Response</span>
+          {response && <StatusBadge status={response.status} />}
+        </div>
+        {response && !isError && (
           <div className="flex items-center gap-2">
             {view === 'json' && <CopyButton text={json} />}
             <div className="flex items-center gap-0.5 bg-[#0A0C10] rounded-lg p-0.5 border border-[#21262D]">
               <button
                 onClick={() => setView('json')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
-                  view === 'json'
-                    ? 'bg-[#FF6B35] text-white'
-                    : 'text-[#8B949E] hover:text-[#E6EDF3] hover:bg-[#21262D]'
+                  view === 'json' ? 'bg-[#FF6B35] text-white' : 'text-[#8B949E] hover:text-[#E6EDF3] hover:bg-[#21262D]'
                 }`}
               >
                 <Braces size={11} />
@@ -84,7 +104,7 @@ export default function ResponsePanel({ response }: ResponsePanelProps) {
               <button
                 onClick={() => setView('graph')}
                 disabled={!hasGraph}
-                title={!hasGraph ? 'No graph data in response' : undefined}
+                title={!hasGraph ? 'No networkx data in response' : undefined}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
                   view === 'graph'
                     ? 'bg-[#FF6B35] text-white'
@@ -114,15 +134,38 @@ export default function ResponsePanel({ response }: ResponsePanelProps) {
         </div>
       )}
 
+      {/* Error state */}
+      {response && isError && (
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="rounded-xl border border-[#E74C3C]/20 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 bg-[#E74C3C]/8 border-b border-[#E74C3C]/20">
+              <AlertCircle size={14} className="text-[#E74C3C]" />
+              <span className="text-xs font-semibold text-[#E74C3C]">Request failed</span>
+              <StatusBadge status={response.status} />
+            </div>
+            <div className="bg-[#0A0C10] p-4">
+              <p className="text-[#E74C3C] text-xs font-mono break-all">{response.error}</p>
+              {Object.keys(response.response).length > 0 && (
+                <div className="mt-4 pt-4 border-t border-[#21262D]">
+                  <p className="text-[10px] text-[#8B949E] mb-2 uppercase tracking-wider">Response body</p>
+                  <JsonHighlight data={response.response} />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* JSON view */}
-      {response && view === 'json' && (
+      {response && !isError && view === 'json' && (
         <div className="flex-1 overflow-y-auto p-4">
           <div className="rounded-xl border border-[#21262D] overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-2 bg-[#161B22] border-b border-[#21262D]">
-              <span className="text-[10px] text-[#2ECC71] bg-[#2ECC71]/10 border border-[#2ECC71]/20 px-2 py-0.5 rounded font-medium">
-                200 OK
-              </span>
+            <div className="flex items-center gap-3 px-4 py-2 bg-[#161B22] border-b border-[#21262D]">
+              <StatusBadge status={response.status} />
               <span className="text-[10px] text-[#8B949E]">application/json</span>
+              <div className="ml-auto">
+                <CopyButton text={json} />
+              </div>
             </div>
             <div className="bg-[#0A0C10] p-4 overflow-x-auto">
               <JsonHighlight data={response.response} />
@@ -132,7 +175,7 @@ export default function ResponsePanel({ response }: ResponsePanelProps) {
       )}
 
       {/* Graph view */}
-      {response && view === 'graph' && hasGraph && (
+      {response && !isError && view === 'graph' && hasGraph && (
         <div className="flex-1 overflow-hidden">
           <GraphViewer data={response.networkx} graphName="response" />
         </div>
