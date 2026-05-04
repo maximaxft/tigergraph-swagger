@@ -123,41 +123,58 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
 
     try {
       // Step 1: call the endpoint
+      console.log('[step1] →', endpoint.method, url);
       const res = await fetch(url, fetchOptions);
-      const data = await res.json();
+      console.log('[step1] ← status', res.status, 'ok', res.ok);
+
+      let data: object;
+      try {
+        data = await res.json();
+        console.log('[step1] body parsed OK', data);
+      } catch (parseErr) {
+        console.error('[step1] failed to parse body as JSON', parseErr);
+        throw parseErr;
+      }
 
       if (!res.ok) {
         onTryIt({
           status: res.status,
           response: data,
           networkx: { nodes: [], links: [] },
-          error: data.detail ?? data.message ?? `HTTP ${res.status}`,
+          error: (data as Record<string, string>).detail
+            ?? (data as Record<string, string>).message
+            ?? `HTTP ${res.status}`,
         });
         return;
       }
 
-      // Step 2: format the response as a networkx graph
+      // Step 2: call format_topology_view with the step-1 result
       setSendStep('graphing');
       let networkx: GraphData = { nodes: [], links: [] };
+      const topoUrl = `${API_BASE_URL}/format_topology_view`;
+      console.log('[step2] → POST', topoUrl);
       try {
-        const topoRes = await fetch(`${API_BASE_URL}/format_topology_view`, {
+        const topoRes = await fetch(topoUrl, {
           method: 'POST',
           headers,
           body: JSON.stringify(data),
         });
+        console.log('[step2] ← status', topoRes.status);
         if (topoRes.ok) {
           networkx = await topoRes.json();
+          console.log('[step2] networkx', networkx);
         } else {
-          console.warn(`[topology] ${topoRes.status}`, await topoRes.text());
+          console.warn('[step2] error body', await topoRes.text());
         }
       } catch (topoErr) {
-        console.warn('[topology] network error', topoErr);
+        console.warn('[step2] network error', topoErr);
       }
 
       onTryIt({ status: res.status, response: data, networkx });
       setTryMode(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Network error';
+      console.error('[send] outer catch', err);
       setSendError(message);
       onTryIt({ status: 0, response: {}, networkx: { nodes: [], links: [] }, error: message });
     } finally {
