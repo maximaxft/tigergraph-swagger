@@ -145,9 +145,13 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
           headers,
           body: JSON.stringify(data),
         });
-        if (topoRes.ok) networkx = await topoRes.json();
-      } catch {
-        // best-effort — graph tab stays disabled if topology call fails
+        if (topoRes.ok) {
+          networkx = await topoRes.json();
+        } else {
+          console.warn(`[topology] ${topoRes.status}`, await topoRes.text());
+        }
+      } catch (topoErr) {
+        console.warn('[topology] network error', topoErr);
       }
 
       onTryIt({ status: res.status, response: data, networkx });
