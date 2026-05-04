@@ -18,16 +18,18 @@ export default function ApiKeyLogin({ onConnect }: ApiKeyLoginProps) {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/health`, { headers: { 'X-API-Key': key.trim() } });
+      const res = await fetch(`${API_BASE_URL}/test_api_key`, { headers: { 'X-API-Key': key.trim() } });
       if (res.status === 401 || res.status === 403) {
         setError('Invalid API key. Access denied.');
         return;
       }
+      if (!res.ok) {
+        setError(`Server error (${res.status}). Please try again.`);
+        return;
+      }
       onConnect(key.trim());
     } catch {
-      // If /health doesn't exist or network issues, still let the user in —
-      // the actual endpoint calls will surface auth errors themselves.
-      onConnect(key.trim());
+      setError('Could not reach the server. Check your network and try again.');
     } finally {
       setLoading(false);
     }
