@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Network, Braces, Copy, Check, Zap, AlertCircle } from 'lucide-react';
 import GraphViewer from './GraphViewer';
+import JsonTree from './JsonTree';
 import { type ApiResponse } from './EndpointPanel';
 
 interface ResponsePanelProps {
@@ -40,39 +41,6 @@ function StatusBadge({ status }: { status: number }) {
   );
 }
 
-function JsonHighlight({ data }: { data: object }) {
-  const json = JSON.stringify(data, null, 2);
-  return (
-    <pre className="text-[11px] font-mono leading-relaxed">
-      {json.split('\n').map((line, i) => {
-        const keyMatch = line.match(/^(\s*)"([^"]+)":/);
-        const strVal   = line.match(/:\s*"([^"]*)"(,?)$/);
-        const numVal   = line.match(/:\s*(-?\d+\.?\d*)(,?)$/);
-        const boolVal  = line.match(/:\s*(true|false)(,?)$/);
-        const nullVal  = line.match(/:\s*(null)(,?)$/);
-
-        if (keyMatch) {
-          const indent = keyMatch[1];
-          const key    = keyMatch[2];
-          const rest   = line.slice(keyMatch[0].length);
-          return (
-            <span key={i} className="block">
-              <span className="text-[#3D444D]">{indent}</span>
-              <span className="text-[#FF6B35]">"{key}"</span>
-              <span className="text-[#8B949E]">:</span>
-              {strVal  && <><span className="text-[#2ECC71]"> "{strVal[1]}"</span><span className="text-[#8B949E]">{strVal[2]}</span></>}
-              {!strVal && numVal  && <><span className="text-[#2A7FFF]"> {numVal[1]}</span><span className="text-[#8B949E]">{numVal[2]}</span></>}
-              {!strVal && !numVal && boolVal && <><span className="text-[#F39C12]"> {boolVal[1]}</span><span className="text-[#8B949E]">{boolVal[2]}</span></>}
-              {!strVal && !numVal && !boolVal && nullVal && <span className="text-[#8B949E]"> null{nullVal[2]}</span>}
-              {!strVal && !numVal && !boolVal && !nullVal && <span className="text-[#8B949E]">{rest}</span>}
-            </span>
-          );
-        }
-        return <span key={i} className="block text-[#8B949E]">{line}</span>;
-      })}
-    </pre>
-  );
-}
 
 export default function ResponsePanel({ response }: ResponsePanelProps) {
   const [view, setView] = useState<View>('json');
@@ -148,7 +116,7 @@ export default function ResponsePanel({ response }: ResponsePanelProps) {
               {Object.keys(response.response).length > 0 && (
                 <div className="mt-4 pt-4 border-t border-[#21262D]">
                   <p className="text-[10px] text-[#8B949E] mb-2 uppercase tracking-wider">Response body</p>
-                  <JsonHighlight data={response.response} />
+                  <JsonTree data={response.response} />
                 </div>
               )}
             </div>
@@ -168,7 +136,7 @@ export default function ResponsePanel({ response }: ResponsePanelProps) {
               </div>
             </div>
             <div className="bg-[#0A0C10] p-4 overflow-x-auto">
-              <JsonHighlight data={response.response} />
+              <JsonTree data={response.response} />
             </div>
           </div>
         </div>
