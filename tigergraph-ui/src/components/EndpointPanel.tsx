@@ -64,13 +64,13 @@ function buildUrl(path: string, paramValues: Record<string, string>, parameters:
 export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPanelProps) {
   const [showParams, setShowParams] = useState(true);
   const [tryMode, setTryMode] = useState(false);
-  const [isSending, setIsSending] = useState(false);
+  const [sendStep, setSendStep] = useState<null | 'fetching' | 'graphing'>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setTryMode(false);
-    setIsSending(false);
+    setSendStep(null);
     setSendError(null);
     if (endpoint) {
       const defaults: Record<string, string> = {};
@@ -111,39 +111,53 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
   const curlCmd = curlParts.join(' \\\n');
 
   const handleSend = async () => {
-    setIsSending(true);
+    setSendStep('fetching');
     setSendError(null);
 
     const url = buildUrl(endpoint.path, paramValues, endpoint.parameters);
     const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-API-Key': apiKey };
-
     const fetchOptions: RequestInit = { method: endpoint.method, headers };
     if (bodyParam && paramValues[bodyParam.name]) {
       fetchOptions.body = paramValues[bodyParam.name];
     }
 
     try {
+      // Step 1: call the endpoint
       const res = await fetch(url, fetchOptions);
       const data = await res.json();
 
-      onTryIt({
-        status: res.status,
-        response: data.response ?? data,
-        networkx: data.networkx ?? { nodes: [], links: [] },
-        ...(res.ok ? {} : { error: data.detail ?? data.message ?? `HTTP ${res.status}` }),
-      });
+      if (!res.ok) {
+        onTryIt({
+          status: res.status,
+          response: data,
+          networkx: { nodes: [], links: [] },
+          error: data.detail ?? data.message ?? `HTTP ${res.status}`,
+        });
+        return;
+      }
+
+      // Step 2: format the response as a networkx graph
+      setSendStep('graphing');
+      let networkx: GraphData = { nodes: [], links: [] };
+      try {
+        const topoRes = await fetch(`${API_BASE_URL}/format_topology_view`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(data),
+        });
+        if (topoRes.ok) networkx = await topoRes.json();
+      } catch {
+        // best-effort — graph tab stays disabled if topology call fails
+      }
+
+      onTryIt({ status: res.status, response: data, networkx });
       setTryMode(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Network error';
       setSendError(message);
-      onTryIt({
-        status: 0,
-        response: {},
-        networkx: { nodes: [], links: [] },
-        error: message,
-      });
+      onTryIt({ status: 0, response: {}, networkx: { nodes: [], links: [] }, error: message });
     } finally {
-      setIsSending(false);
+      setSendStep(null);
     }
   };
 
@@ -279,15 +293,17 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
 
               <button
                 onClick={handleSend}
-                disabled={isSending}
+                disabled={sendStep !== null}
                 className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-                  isSending
+                  sendStep !== null
                     ? 'bg-[#FF6B35]/30 text-[#FF6B35] cursor-not-allowed'
                     : 'bg-[#FF6B35] hover:bg-[#FF8C5A] text-white shadow-md shadow-[#FF6B35]/20'
                 }`}
               >
-                <Send size={13} className={isSending ? 'animate-pulse' : ''} />
-                {isSending ? 'Sending…' : 'Send'}
+                <Send size={13} className={sendStep !== null ? 'animate-pulse' : ''} />
+                {sendStep === 'fetching' && 'Fetching data…'}
+                {sendStep === 'graphing' && 'Building graph…'}
+                {sendStep === null && 'Send'}
               </button>
             </div>
           </div>
