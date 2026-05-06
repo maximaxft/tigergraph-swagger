@@ -53,6 +53,15 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
     setFilterType('');
   }, [graphName]);
 
+  // Tune d3 forces after data changes — reduce repulsion and cap link distance
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fgRef.current?.d3Force('charge')?.strength(-120);
+      fgRef.current?.d3Force('link')?.distance(60);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [filteredData.nodes.length, filteredData.links.length]);
+
   const handleZoomIn  = useCallback(() => fgRef.current?.zoom(1.5, 300), []);
   const handleZoomOut = useCallback(() => fgRef.current?.zoom(0.7, 300), []);
   const handleFit     = useCallback(() => fgRef.current?.zoomToFit(400, 40), []);
@@ -191,9 +200,11 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
               return prevSrc === lSrc && prevTgt === lTgt ? null : l;
             });
           }}
-          cooldownTicks={120}
-          d3AlphaDecay={0.02}
-          d3VelocityDecay={0.3}
+          warmupTicks={200}
+          cooldownTicks={50}
+          d3AlphaDecay={0.04}
+          d3VelocityDecay={0.5}
+          onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
           enableNodeDrag
           enableZoomInteraction
           enablePanInteraction

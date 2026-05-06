@@ -9,6 +9,7 @@ export interface Parameter {
   required: boolean;
   description: string;
   example?: string;
+  options?: string[];
 }
 
 export interface Endpoint {
@@ -44,7 +45,10 @@ export const endpoints: Endpoint[] = [
     summary: 'Get All Entities',
     description: 'Returns every vertex of the specified type with all its attributes.',
     tag: 'Single Entity',
-    parameters: [{ name: 'vertex_type', in: 'query', type: 'string', required: true, description: 'Vertex type to query', example: 'Service Change Incident Business Application' }],
+    parameters: [
+      { name: 'vertex_type', in: 'query', type: 'string', required: true, description: 'Vertex type to query', example: 'Service', options: ['Service', 'Incident', 'Change', 'BusinessApplication', 'Application', 'Person', 'Company'] },
+      { name: 'limit', in: 'query', type: 'integer', required: false, description: 'Max number of vertices to return (1–5000)', example: '100' },
+    ],
     responseExample: {
       graphs: ['SocialNetwork', 'SupplyChain', 'FraudDetection'],
       count: 1,
@@ -70,7 +74,7 @@ export const endpoints: Endpoint[] = [
     summary: 'Get All Entities',
     description: 'Returns every vertex of the specified type with all its attributes.',
     tag: 'Impacted Entities',
-    parameters: [{ name: 'vertex_type', in: 'query', type: 'string', required: true, description: 'Vertex type to query', example: 'Service Change Incident Business Application' }],
+    parameters: [{ name: 'vertex_type', in: 'query', type: 'string', required: true, description: 'Vertex type to query', example: 'Service', options: ['Service', 'Incident', 'Change', 'BusinessApplication', 'Application', 'Person', 'Company'] }],
     responseExample: {
       graphs: ['SocialNetwork', 'SupplyChain', 'FraudDetection'],
       count: 1,

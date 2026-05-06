@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Any
 import os
@@ -43,15 +43,25 @@ def health():
     return {"status": "ok"}
 
 
+# ── Auth check ───────────────────────────────────────────────────────────────
+
+@app.get("/test_api_key")
+def test_api_key(_key: str = Depends(require_api_key)):
+    return {"status": "ok"}
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/get-entites")
 def get_entities(
     vertex_type: str,
+    limit: int = Query(default=100, ge=1, le=5000, description="Max number of vertices to return"),
     _key: str = Depends(require_api_key),
 ):
-    """Return every vertex of the requested type."""
-    # TODO: replace with real TigerGraph call
+    """Return vertices of the requested type, capped by limit."""
+    # TODO: replace with real TigerGraph call:
+    #   results = conn.getVertices(vertex_type, limit=limit)
+    #   return {"results": results}
     return {
         "results": [
             {"v_id": "s1", "v_type": vertex_type, "attributes": {"name": "Example A"}},

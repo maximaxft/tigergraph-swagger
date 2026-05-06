@@ -74,7 +74,9 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
     setSendError(null);
     if (endpoint) {
       const defaults: Record<string, string> = {};
-      for (const p of endpoint.parameters) defaults[p.name] = p.example ?? '';
+      for (const p of endpoint.parameters) {
+        defaults[p.name] = p.options ? p.options[0] : (p.example ?? '');
+      }
       setParamValues(defaults);
     }
   }, [endpoint?.id]);
@@ -242,6 +244,17 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
                           placeholder={`JSON body…`}
                           className="w-full bg-[#111318] border border-[#21262D] focus:border-[#FF6B35]/50 rounded-md px-3 py-2 text-xs text-[#E6EDF3] placeholder-[#3D444D] outline-none transition-colors font-mono resize-none"
                         />
+                      ) : param.options ? (
+                        <select
+                          value={paramValues[param.name] ?? ''}
+                          onChange={(e) => setParamValues((prev) => ({ ...prev, [param.name]: e.target.value }))}
+                          className="w-full bg-[#111318] border border-[#21262D] focus:border-[#FF6B35]/50 rounded-md px-3 py-1.5 text-xs text-[#E6EDF3] outline-none transition-colors font-mono appearance-none cursor-pointer"
+                        >
+                          {!param.required && <option value="">— select —</option>}
+                          {param.options.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
                       ) : (
                         <input
                           value={paramValues[param.name] ?? ''}
@@ -251,14 +264,22 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
                         />
                       )
                     ) : (
-                      param.example && (
+                      param.options ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {param.options.map((opt) => (
+                            <code key={opt} className="text-[10px] text-[#2ECC71] font-mono bg-[#2ECC71]/5 px-2 py-0.5 rounded border border-[#2ECC71]/10">
+                              {opt}
+                            </code>
+                          ))}
+                        </div>
+                      ) : param.example ? (
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-[#8B949E]">Example:</span>
                           <code className="text-[10px] text-[#2ECC71] font-mono bg-[#2ECC71]/5 px-2 py-0.5 rounded border border-[#2ECC71]/10">
                             {param.example}
                           </code>
                         </div>
-                      )
+                      ) : null
                     )}
                   </div>
                 ))}
