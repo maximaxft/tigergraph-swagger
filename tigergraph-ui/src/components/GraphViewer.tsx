@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import cytoscape, { type Core } from 'cytoscape';
+import cytoscape, { type Core, type NodeSingular } from 'cytoscape';
 import { ZoomIn, ZoomOut, Maximize2, RefreshCw, Filter, X } from 'lucide-react';
 import { type GraphData, type GraphNode } from '../data/graphData';
 
@@ -12,14 +12,34 @@ type SelNode = { id: string; label: string; type: string; color: string; attribu
 type SelEdge = { source: string; target: string; type: string; color: string; attributes: Record<string, unknown> };
 
 export default function GraphViewer({ data, graphName }: GraphViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cyRef        = useRef<Core | null>(null);
+  const wrapperRef    = useRef<HTMLDivElement>(null); // measured by ResizeObserver
+  const containerRef  = useRef<HTMLDivElement>(null); // Cytoscape target
+  const cyRef         = useRef<Core | null>(null);
 
+  const [dims, setDims]               = useState({ w: 0, h: 0 });
   const [selectedNode, setSelectedNode] = useState<SelNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<SelEdge | null>(null);
   const [filterType,   setFilterType]   = useState('');
 
-  // type → color derived from data
+  // ── Measure wrapper ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!wrapperRef.current) return;
+    const obs = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setDims({ w: Math.floor(width), h: Math.floor(height) });
+    });
+    obs.observe(wrapperRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  // ── When panel is resized, tell Cytoscape ────────────────────────────────────
+  useEffect(() => {
+    if (!cyRef.current || dims.w === 0) return;
+    cyRef.current.resize();
+  }, [dims]);
+
+  // ── Type / color map ─────────────────────────────────────────────────────────
   const typeColorMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const n of data.nodes) if (!m.has(n.type)) m.set(n.type, n.color);
@@ -27,7 +47,7 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
   }, [data]);
   const nodeTypes = Array.from(typeColorMap.keys());
 
-  // Filtered sets
+  // ── Filtered sets ────────────────────────────────────────────────────────────
   const visNodes = useMemo(
     () => (filterType ? data.nodes.filter((n) => n.type === filterType) : data.nodes),
     [data.nodes, filterType],
@@ -43,9 +63,10 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
     [data.links, visNodeIds],
   );
 
-  // Build Cytoscape instance whenever visible data changes
+  // ── Init / rebuild Cytoscape ─────────────────────────────────────────────────
+  // Depends on both data AND dims: we only init when the container has real px.
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (dims.w === 0 || dims.h === 0 || !containerRef.current) return;
 
     cyRef.current?.destroy();
     setSelectedNode(null);
@@ -53,10 +74,11 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
 
     const cy = cytoscape({
       container: containerRef.current,
+
       elements: [
         ...visNodes.map((n) => ({
           data: {
-            id: n.id,
+            id:    n.id,
             label: n.label,
             type:  n.type,
             color: n.color || '#8B949E',
@@ -80,38 +102,34 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
         {
           selector: 'node',
           style: {
-            'background-color': 'data(color)',
-            'width':  'data(size)',
-            'height': 'data(size)',
-            'label':  'data(label)',
-            'color':  '#E6EDF3',
-            'font-size': 10,
-            'font-family': 'Inter, system-ui, sans-serif',
-            'font-weight': '600',
-            'text-valign': 'bottom',
-            'text-halign': 'center',
-            'text-margin-y': 4,
+            'background-color': (ele: NodeSingular) => ele.data('color') as string,
+            'width':            (ele: NodeSingular) => ele.data('size') as number,
+            'height':           (ele: NodeSingular) => ele.data('size') as number,
+            'label':            'data(label)',
+            'color':            '#E6EDF3',
+            'font-size':        10,
+            'font-family':      'Inter, system-ui, sans-serif',
+            'font-weight':      600,
+            'text-valign':      'bottom',
+            'text-halign':      'center',
+            'text-margin-y':    4,
             'text-outline-color': '#0A0C10',
             'text-outline-width': 2,
-            'text-max-width': '80px',
-            'text-wrap': 'ellipsis',
-            'border-width': 2,
-            'border-color': '#0A0C10',
+            'text-max-width':   '80px',
+            'text-wrap':        'ellipsis',
+            'border-width':     2,
+            'border-color':     '#0A0C10',
           } as unknown as cytoscape.Css.Node,
         },
         {
           selector: 'node:selected',
           style: {
-            'border-width': 3,
-            'border-color': 'data(color)',
-            'overlay-color': 'data(color)',
-            'overlay-padding': 8,
-            'overlay-opacity': 0.15,
+            'border-width':     3,
+            'border-color':     (ele: NodeSingular) => ele.data('color') as string,
+            'overlay-color':    (ele: NodeSingular) => ele.data('color') as string,
+            'overlay-padding':  8,
+            'overlay-opacity':  0.15,
           } as unknown as cytoscape.Css.Node,
-        },
-        {
-          selector: 'node:active',
-          style: { 'overlay-opacity': 0.08 } as unknown as cytoscape.Css.Node,
         },
         {
           selector: 'edge',
@@ -129,16 +147,12 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
           selector: 'edge:selected',
           style: { 'width': 3, 'opacity': 1 } as unknown as cytoscape.Css.Edge,
         },
-        {
-          selector: 'edge:active',
-          style: { 'overlay-opacity': 0 } as unknown as cytoscape.Css.Edge,
-        },
       ],
 
       layout: {
         name:             'cose',
         animate:          false,
-        fit:              false,   // we fit manually after resize (container may be 0×0 at init)
+        fit:              true,   // safe now — container has explicit pixel dims
         padding:          50,
         randomize:        true,
         componentSpacing: 120,
@@ -159,48 +173,26 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
       wheelSensitivity:    0.25,
     });
 
-    // Click node → show panel
     cy.on('tap', 'node', (evt) => {
       const d = evt.target.data();
       setSelectedEdge(null);
       setSelectedNode({ id: d.id, label: d.label, type: d.type, color: d.color, attributes: d.attrs || {} });
     });
-
-    // Click edge → show panel
     cy.on('tap', 'edge', (evt) => {
       const d = evt.target.data();
       setSelectedNode(null);
       setSelectedEdge({ source: d.source, target: d.target, type: d.type, color: d.color, attributes: d.attrs || {} });
     });
-
-    // Click background → deselect
     cy.on('tap', (evt) => {
-      if (evt.target === cy) {
-        setSelectedNode(null);
-        setSelectedEdge(null);
-      }
+      if (evt.target === cy) { setSelectedNode(null); setSelectedEdge(null); }
     });
 
     cyRef.current = cy;
+    return () => { cy.destroy(); cyRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dims.w, dims.h, visNodes, visLinks]);
 
-    // The container may have 0×0 dimensions at the moment Cytoscape mounts
-    // (e.g. when switching from JSON tab to Graph tab).
-    // requestAnimationFrame defers until the browser has painted and the
-    // container has its real size, then we force a resize + fit.
-    const rafId = requestAnimationFrame(() => {
-      if (cyRef.current !== cy) return;
-      cy.resize();
-      cy.fit(undefined, 50);
-    });
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      cy.destroy();
-      cyRef.current = null;
-    };
-  }, [visNodes, visLinks]);
-
-  // Reset on graph switch
+  // ── Reset on graph switch ────────────────────────────────────────────────────
   useEffect(() => {
     setSelectedNode(null);
     setSelectedEdge(null);
@@ -211,9 +203,7 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
   const zoomOut = () => { const cy = cyRef.current; if (cy) cy.zoom(Math.max(cy.zoom() / 1.4, 0.05)); };
   const fitView = () => cyRef.current?.fit(undefined, 40);
   const reset   = () => {
-    setSelectedNode(null);
-    setSelectedEdge(null);
-    setFilterType('');
+    setSelectedNode(null); setSelectedEdge(null); setFilterType('');
     cyRef.current?.fit(undefined, 40);
   };
 
@@ -253,9 +243,12 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
         </div>
       </div>
 
-      {/* Graph canvas */}
-      <div className="flex-1 relative overflow-hidden">
-        <div ref={containerRef} className="absolute inset-0" />
+      {/* Canvas — wrapper measures, container gets explicit px dimensions */}
+      <div ref={wrapperRef} className="flex-1 relative overflow-hidden">
+        <div
+          ref={containerRef}
+          style={{ width: dims.w, height: dims.h, position: 'absolute', top: 0, left: 0 }}
+        />
 
         {/* Selected node panel */}
         {selectedNode && (
@@ -299,10 +292,8 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
               <span className="font-semibold text-sm truncate min-w-0" style={{ color: selectedEdge.color }}>
                 {selectedEdge.type}
               </span>
-              <button
-                onClick={() => setSelectedEdge(null)}
-                className="ml-auto shrink-0 text-[#8B949E] hover:text-[#E6EDF3] transition-colors"
-              >
+              <button onClick={() => setSelectedEdge(null)}
+                className="ml-auto shrink-0 text-[#8B949E] hover:text-[#E6EDF3] transition-colors">
                 <X size={12} />
               </button>
             </div>
