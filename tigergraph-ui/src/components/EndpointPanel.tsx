@@ -101,16 +101,21 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
   const resolvedUrl = buildUrl(endpoint.path, paramValues, endpoint.parameters);
   const bodyParam = endpoint.parameters.find((p) => p.in === 'body');
 
-  const curlParts = [
-    `curl -X ${endpoint.method}`,
-    `  "${resolvedUrl}"`,
-    `  -H "X-API-Key: ${apiKey}"`,
-    `  -H "Content-Type: application/json"`,
-    bodyParam && paramValues[bodyParam.name]
-      ? `  -d '${paramValues[bodyParam.name]}'`
-      : null,
-  ].filter(Boolean);
-  const curlCmd = curlParts.join(' \\\n');
+  const buildCurl = (key: string) =>
+    [
+      `curl -X ${endpoint.method}`,
+      `  "${resolvedUrl}"`,
+      `  -H "X-API-Key: ${key}"`,
+      `  -H "Content-Type: application/json"`,
+      bodyParam && paramValues[bodyParam.name]
+        ? `  -d '${paramValues[bodyParam.name]}'`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' \\\n');
+
+  const curlCmd        = buildCurl(apiKey);
+  const curlCmdMasked  = buildCurl('••••••••');
 
   const extractError = (data: object, status: number): string => {
     const d = data as Record<string, unknown>;
@@ -309,7 +314,7 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
             <CopyButton text={curlCmd} />
           </div>
           <div className="bg-[#0A0C10] p-4 overflow-x-auto">
-            <pre className="text-[#E6EDF3] font-mono text-[11px] leading-relaxed whitespace-pre">{curlCmd}</pre>
+            <pre className="text-[#E6EDF3] font-mono text-[11px] leading-relaxed whitespace-pre">{curlCmdMasked}</pre>
           </div>
         </div>
 
