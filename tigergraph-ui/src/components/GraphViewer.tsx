@@ -137,8 +137,8 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
 
       layout: {
         name:             'cose',
-        animate:          false,   // positions computed before first paint — no movement
-        fit:              true,
+        animate:          false,
+        fit:              false,   // we fit manually after resize (container may be 0×0 at init)
         padding:          50,
         randomize:        true,
         componentSpacing: 120,
@@ -182,7 +182,19 @@ export default function GraphViewer({ data, graphName }: GraphViewerProps) {
     });
 
     cyRef.current = cy;
+
+    // The container may have 0×0 dimensions at the moment Cytoscape mounts
+    // (e.g. when switching from JSON tab to Graph tab).
+    // requestAnimationFrame defers until the browser has painted and the
+    // container has its real size, then we force a resize + fit.
+    const rafId = requestAnimationFrame(() => {
+      if (cyRef.current !== cy) return;
+      cy.resize();
+      cy.fit(undefined, 50);
+    });
+
     return () => {
+      cancelAnimationFrame(rafId);
       cy.destroy();
       cyRef.current = null;
     };
