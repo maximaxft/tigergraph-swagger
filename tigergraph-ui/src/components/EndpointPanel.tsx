@@ -112,6 +112,14 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
   ].filter(Boolean);
   const curlCmd = curlParts.join(' \\\n');
 
+  const extractError = (data: object, status: number): string => {
+    const d = data as Record<string, unknown>;
+    const raw = d.detail ?? d.message ?? d.error;
+    if (raw === undefined) return `Server error (HTTP ${status})`;
+    if (typeof raw === 'string') return raw;
+    return JSON.stringify(raw);
+  };
+
   const handleSend = async () => {
     setSendStep('fetching');
     setSendError(null);
@@ -129,13 +137,21 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
       const res = await fetch(url, fetchOptions);
       console.log('[step1] ← status', res.status, 'ok', res.ok);
 
-      let data: object;
+      let data: object = {};
       try {
         data = await res.json();
         console.log('[step1] body parsed OK', data);
-      } catch (parseErr) {
-        console.error('[step1] failed to parse body as JSON', parseErr);
-        throw parseErr;
+      } catch {
+        // Non-JSON body (e.g. plain text error) — treat as server error
+        if (!res.ok) {
+          onTryIt({
+            status: res.status,
+            response: {},
+            networkx: { nodes: [], links: [] },
+            error: `Server error (HTTP ${res.status})`,
+          });
+          return;
+        }
       }
 
       if (!res.ok) {
@@ -143,9 +159,7 @@ export default function EndpointPanel({ endpoint, apiKey, onTryIt }: EndpointPan
           status: res.status,
           response: data,
           networkx: { nodes: [], links: [] },
-          error: (data as Record<string, string>).detail
-            ?? (data as Record<string, string>).message
-            ?? `HTTP ${res.status}`,
+          error: extractError(data, res.status),
         });
         return;
       }
